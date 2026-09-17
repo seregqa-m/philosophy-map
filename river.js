@@ -2,14 +2,16 @@
 let selectedSchool='',selectedFamily='',mapTrail=[],mapModel=null,camera=null,activeEdge=null;
 const mapSVG=$('#riverSvg'),mapViewport=$('#riverViewport');
 const personById=id=>philosophers.find(p=>p.id===id);
+const isParallel=id=>mapPlaces[id][2]==='parallel';
 const schoolColor=id=>mapFamilies[mapPlaces[id][2]].color;
+const edgeColor=e=>isParallel(e.from)||isParallel(e.to)?mapFamilies.parallel.color:schoolColor(e.from);
 const radius=p=>7+p.weight*3.8;
 function makeMapModel(schoolId='',family='',neighbors=true){
  let ids=currents.map(c=>c.id),links=edges;
  if(schoolId){ids=[schoolId];if(neighbors)ids.push(...incoming(schoolId).map(e=>e.from),...outgoing(schoolId).map(e=>e.to));ids=[...new Set(ids)];}
  else if(family)ids=ids.filter(id=>mapPlaces[id][2]===family);
  links=edges.filter(e=>ids.includes(e.from)&&ids.includes(e.to)&&(!schoolId||e.from===schoolId||e.to===schoolId));
- const positions={};let width=2550,height=1490;
+ const positions={};let width=2550,height=2090;
  if(schoolId){
   const before=ids.filter(id=>id!==schoolId&&incoming(schoolId).some(e=>e.from===id)),after=ids.filter(id=>id!==schoolId&&!before.includes(id));
   const rows=Math.max(before.length,after.length,1);height=Math.max(460,rows*235+110);width=1340;
@@ -17,8 +19,14 @@ function makeMapModel(schoolId='',family='',neighbors=true){
   before.forEach((id,i)=>positions[id]={x:210,y:110+(i+.5)*(height-150)/before.length});
   after.forEach((id,i)=>positions[id]={x:1130,y:110+(i+.5)*(height-150)/after.length});
   if(ids.length===1){width=650;height=420;positions[schoolId]={x:325,y:190};}
- }else for(const id of ids)positions[id]={x:130+mapPlaces[id][0]*250,y:mapPlaces[id][1]};
- return {ids,links,positions,width,height,focused:schoolId};
+ }else for(const id of ids)positions[id]={x:130+mapPlaces[id][0]*250,y:isParallel(id)?(id==='india-china'?1940:1730):mapPlaces[id][1]+50};
+ const mainIds=ids.filter(id=>!isParallel(id)),parallelIds=ids.filter(isParallel);
+ let parallelStart=schoolId?null:1550;
+ if(schoolId&&parallelIds.length){
+  parallelStart=mainIds.length?Math.max(...mainIds.map(id=>positions[id].y))+160:80;
+  if(mainIds.length){const counts=new Map();for(const id of parallelIds){const x=positions[id].x,row=counts.get(x)||0;positions[id].y=parallelStart+165+row*235;counts.set(x,row+1);}height=Math.max(height,...parallelIds.map(id=>positions[id].y+145));}
+ }
+ return {ids,links,positions,width,height,focused:schoolId,parallelStart,hasMain:mainIds.length>0,hasParallel:parallelIds.length>0};
 }
 function curveFor(e,m){
  const a=m.positions[e.from],b=m.positions[e.to],dx=b.x-a.x;
@@ -28,9 +36,11 @@ function curveFor(e,m){
 }
 function renderMapSVG(m){
  let html=`<title id="riverTitle">Карта течений философии</title><desc>Круги — философы. Нажмите на имя, чтобы открыть карточку. Подписи направлений фильтруют карту. Ленты показывают отношения между направлениями, а не обязательное личное знакомство философов.</desc><rect width="${m.width}" height="${m.height}" fill="#f8f7f2"/>`;
+ if(m.hasMain)html+='<text x="26" y="91" class="tradition-heading" fill="#43564b">ЕВРОПЕЙСКАЯ ФИЛОСОФИЯ И ЕЁ ПРОДОЛЖЕНИЯ</text>';
+ if(m.hasParallel){const y=m.parallelStart;html+=`<rect x="0" y="${y}" width="${m.width}" height="${m.height-y}" fill="#eeeff0"/><path d="M 0 ${y} H ${m.width}" stroke="#b9bdc2" stroke-width="2"/><text x="26" y="${y+36}" class="tradition-heading" fill="#60666e">ДРУГИЕ ТРАДИЦИИ · ПАРАЛЛЕЛИ И ОБМЕН ИДЕЯМИ</text><text x="26" y="${y+63}" class="tradition-caption" fill="#737980">Отдельная область общей карты; линии между областями показывают исторические связи.</text>`;}
  if(!m.focused){for(let i=0;i<10;i++){const x=130+i*250;html+=`<path d="M ${x} 85 V ${m.height-25}" stroke="#dedfd6" stroke-width="1" stroke-dasharray="3 8"/><text x="${x-104}" y="30" class="epoch-label">${esc(mapEpochs[i][0])}</text><text x="${x-104}" y="53" class="epoch-context">${esc(mapEpochs[i][1].split(',')[0])}</text>`;}}
  else if(m.ids.length>1)html+=`<text x="90" y="42" class="epoch-label">ИСТОЧНИКИ И СПОРЫ →</text><text x="550" y="42" class="epoch-label">ВЫБРАННОЕ ТЕЧЕНИЕ</text><text x="1010" y="42" class="epoch-label">ПРОДОЛЖЕНИЯ →</text>`;
- for(const e of m.links){const i=edges.indexOf(e),width=(byId(e.from).weight+byId(e.to).weight-2)*4.6,color=schoolColor(e.from),d=curveFor(e,m);html+=`<g class="river-edge ${e.type==='спор'?'is-dispute':''}" data-edge="${i}" tabindex="0" role="button" aria-label="${esc(byId(e.from).name+' → '+byId(e.to).name+': '+e.type)}"><title>${esc(byId(e.from).name+' → '+byId(e.to).name+' · '+e.type+'\n'+e.note)}</title><path class="edge-hit" d="${d}" fill="none" stroke="transparent" stroke-width="${Math.max(25,width+8)}"/><path class="ribbon" d="${d}" fill="none" stroke="${color}" stroke-width="${width}" stroke-linecap="round"/><path class="ribbon-spine" d="${d}" fill="none" stroke="${color}" stroke-width="1.5" ${e.type==='спор'?'stroke-dasharray="5 5"':''}/></g>`;}
+ for(const e of m.links){const i=edges.indexOf(e),width=(byId(e.from).weight+byId(e.to).weight-2)*4.6*(isParallel(e.from)||isParallel(e.to)?.65:1),color=edgeColor(e),d=curveFor(e,m);html+=`<g class="river-edge ${e.type==='спор'?'is-dispute':''}" data-edge="${i}" tabindex="0" role="button" aria-label="${esc(byId(e.from).name+' → '+byId(e.to).name+': '+e.type)}"><title>${esc(byId(e.from).name+' → '+byId(e.to).name+' · '+e.type+'\n'+e.note)}</title><path class="edge-hit" d="${d}" fill="none" stroke="transparent" stroke-width="${Math.max(25,width+8)}"/><path class="ribbon" d="${d}" fill="none" stroke="${color}" stroke-width="${width}" stroke-linecap="round"/><path class="ribbon-spine" d="${d}" fill="none" stroke="${color}" stroke-width="1.5" ${e.type==='спор'?'stroke-dasharray="5 5"':''}/></g>`;}
  for(const id of m.ids){
   const c=byId(id),a=m.positions[id],color=schoolColor(id),members=[...schoolPeople[id]].sort((a,b)=>b.weight-a.weight),lead=members.shift();
   html+=`<g class="school-cluster ${m.focused===id?'selected-cluster':''} ${c.type==='parallel'?'parallel-cluster':''}" data-cluster="${id}">`;
@@ -79,7 +89,7 @@ function applyCamera(){
  if(!camera)return;mapSVG.setAttribute('viewBox',`${camera.x} ${camera.y} ${camera.w} ${camera.h}`);
  const scale=mapViewport.clientWidth/camera.w;mapSVG.classList.toggle('show-all-names',Boolean(selectedSchool)||scale>.85);
  $('#mapZoomLevel').textContent=Math.round(scale*100)+'%';
- $('#mapMini').innerHTML=`<svg viewBox="0 0 ${mapModel.width} ${mapModel.height}" aria-hidden="true">${mapModel.links.map(e=>`<path d="${curveFor(e,mapModel)}" fill="none" stroke="${schoolColor(e.from)}" stroke-opacity=".35" stroke-width="12"/>`).join('')}${mapModel.ids.map(id=>{const p=mapModel.positions[id];return `<circle cx="${p.x}" cy="${p.y}" r="18" fill="${schoolColor(id)}"/>`;}).join('')}<rect x="${camera.x}" y="${camera.y}" width="${camera.w}" height="${camera.h}" fill="#315d4512" stroke="#315d45" stroke-width="12"/></svg>`;
+ $('#mapMini').innerHTML=`<svg viewBox="0 0 ${mapModel.width} ${mapModel.height}" aria-hidden="true">${mapModel.hasParallel?`<rect x="0" y="${mapModel.parallelStart}" width="${mapModel.width}" height="${mapModel.height-mapModel.parallelStart}" fill="#e3e5e7"/>`:''}${mapModel.links.map(e=>`<path d="${curveFor(e,mapModel)}" fill="none" stroke="${edgeColor(e)}" stroke-opacity=".35" stroke-width="12"/>`).join('')}${mapModel.ids.map(id=>{const p=mapModel.positions[id];return `<circle cx="${p.x}" cy="${p.y}" r="18" fill="${schoolColor(id)}"/>`;}).join('')}<rect x="${camera.x}" y="${camera.y}" width="${camera.w}" height="${camera.h}" fill="#315d4512" stroke="#315d45" stroke-width="12"/></svg>`;
 }
 function zoomMap(factor,px=.5,py=.5){
  if(!camera)return;const scale=mapViewport.clientWidth/(camera.w/factor);if(scale<.18||scale>2.8)return;

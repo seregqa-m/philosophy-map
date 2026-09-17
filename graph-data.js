@@ -5,7 +5,7 @@ const mapFamilies = {
   life: {name:'Существование и жизнь',color:'#b16b3b'},
   society: {name:'Общество и власть',color:'#aa596d'},
   language: {name:'Язык и интерпретация',color:'#8671aa'},
-  parallel: {name:'Другие традиции',color:'#87925c'}
+  parallel: {name:'Другие традиции',color:'#858a91'}
 };
 // Columns mark broad historical stages, not a linear time scale. Y is only layout.
 const mapPlaces = {
