@@ -129,6 +129,12 @@ const personNotes = {
  'Бернар Стиглер':['Техника участвует в формировании памяти, времени и человеческого опыта.','Широкие диагнозы технической среды требуют уточнения конкретных механизмов и различий использования.'],
  'Лучано Флориди':['Информация и информационная среда становятся предметом онтологии и этики.','Информационный язык может сглаживать различия между живыми существами, людьми и техническими объектами.']
 };
+for(const {school,thinkers} of worldSchools){
+ const [,column,offset]=worldPlaces[school.id];mapPlaces[school.id]=[column,offset,'parallel'];shortSchools[school.id]=school.name.split(':')[0];
+ for(const p of thinkers){personWeights[p.name]=p.weight;personNotes[p.name]=[p.idea,p.critique];}
+}
+shortSchools['india-china']='Ранний буддизм';shortSchools.islamic='Фальсафа';
+Object.assign(shortSchools,{jain:'Джайнская философия',materialism:'Локаята / чарвака',nyaya:'Ньяя',mimamsa:'Миманса',neoconfucian:'Неоконфуцианство',wangschool:'Школа сердца',korean:'Корейское конфуцианство',chan:'Чань',zen:'Дзэн: Догэн',tibetan:'Тибет: Цонкапа',kalam:'Калам: аль-Газали',illumination:'Ишракизм',sufism:'Ибн Араби',sadra:'Мулла Садра','african-sage':'Философия мудрецов','african-ethics':'Личность и сообщество',nahua:'Мысль науа',liberation:'Философия освобождения'});
 const peopleMap=new Map(),schoolPeople={};
 for(const school of currents){
  schoolPeople[school.id]=[];
@@ -138,4 +144,5 @@ for(const school of currents){
  }
 }
 const philosophers=[...peopleMap.values()];
+for(const {thinkers} of worldSchools)for(const author of thinkers){const p=peopleMap.get(author.name);if(p){p.short=author.short;p.dates=author.dates;}}
 for(const p of philosophers){if(p.name==='Мартин Хайдеггер')p.dates='1889–1976';if(p.name==='Иммануил Кант')p.dates='1724–1804';if(p.name==='Георг Гегель')p.dates='1770–1831';if(p.name==='Карл Маркс')p.dates='1818–1883';if(p.name==='Эдмунд Гуссерль')p.dates='1859–1938';if(p.name==='Жан-Поль Сартр')p.dates='1905–1980';if(p.name==='Симона де Бовуар')p.dates='1908–1986';if(p.name==='Марк Аврелий')p.short='Марк Аврелий';if(p.name==='Зенон Китийский')p.short='Зенон';if(p.name==='Фома Аквинский')p.short='Фома Аквинский';if(p.name==='Ибн Сина')p.short='Ибн Сина';if(p.name==='Ибн Рушд')p.short='Ибн Рушд';if(p.name==='Симона де Бовуар')p.short='Бовуар';if(p.name==='Нисида Китаро')p.short='Нисида';if(p.name==='Ниситани Кэйдзи')p.short='Ниситани';}

@@ -1,5 +1,6 @@
 'use strict';
 let selectedSchool='',selectedFamily='',mapTrail=[],mapModel=null,camera=null,activeEdge=null;
+let currentRegion='europe';
 const mapSVG=$('#riverSvg'),mapViewport=$('#riverViewport');
 const personById=id=>philosophers.find(p=>p.id===id);
 const isParallel=id=>mapPlaces[id][2]==='parallel';
@@ -11,7 +12,7 @@ function makeMapModel(schoolId='',family='',neighbors=true){
  if(schoolId){ids=[schoolId];if(neighbors)ids.push(...incoming(schoolId).map(e=>e.from),...outgoing(schoolId).map(e=>e.to));ids=[...new Set(ids)];}
  else if(family)ids=ids.filter(id=>mapPlaces[id][2]===family);
  links=edges.filter(e=>ids.includes(e.from)&&ids.includes(e.to)&&(!schoolId||e.from===schoolId||e.to===schoolId));
- const positions={};let width=2550,height=2090;
+ const positions={};let width=2550,height=worldBands.at(-1).top+worldBands.at(-1).height;
  if(schoolId){
   const before=ids.filter(id=>id!==schoolId&&incoming(schoolId).some(e=>e.from===id)),after=ids.filter(id=>id!==schoolId&&!before.includes(id));
   const rows=Math.max(before.length,after.length,1);height=Math.max(460,rows*235+110);width=1340;
@@ -19,14 +20,15 @@ function makeMapModel(schoolId='',family='',neighbors=true){
   before.forEach((id,i)=>positions[id]={x:210,y:110+(i+.5)*(height-150)/before.length});
   after.forEach((id,i)=>positions[id]={x:1130,y:110+(i+.5)*(height-150)/after.length});
   if(ids.length===1){width=650;height=420;positions[schoolId]={x:325,y:190};}
- }else for(const id of ids)positions[id]={x:130+mapPlaces[id][0]*250,y:isParallel(id)?(id==='india-china'?1940:1730):mapPlaces[id][1]+50};
+ }else {for(const id of ids){const wp=worldPlaces[id];positions[id]=wp?{x:130+wp[1]*250,y:worldBands.find(b=>b.id===wp[0]).top+wp[2]}:{x:130+mapPlaces[id][0]*250,y:mapPlaces[id][1]+50};}height=Math.max(...ids.map(id=>positions[id].y))+150;}
  const mainIds=ids.filter(id=>!isParallel(id)),parallelIds=ids.filter(isParallel);
  let parallelStart=schoolId?null:1550;
  if(schoolId&&parallelIds.length){
   parallelStart=mainIds.length?Math.max(...mainIds.map(id=>positions[id].y))+160:80;
   if(mainIds.length){const counts=new Map();for(const id of parallelIds){const x=positions[id].x,row=counts.get(x)||0;positions[id].y=parallelStart+165+row*235;counts.set(x,row+1);}height=Math.max(height,...parallelIds.map(id=>positions[id].y+145));}
  }
- return {ids,links,positions,width,height,focused:schoolId,parallelStart,hasMain:mainIds.length>0,hasParallel:parallelIds.length>0};
+ const bands=schoolId?[]:worldBands.filter(b=>parallelIds.some(id=>worldPlaces[id]?.[0]===b.id));
+ return {ids,links,positions,width,height,focused:schoolId,parallelStart,hasMain:mainIds.length>0,hasParallel:parallelIds.length>0,bands};
 }
 function curveFor(e,m){
  const a=m.positions[e.from],b=m.positions[e.to],dx=b.x-a.x;
@@ -37,8 +39,9 @@ function curveFor(e,m){
 function renderMapSVG(m){
  let html=`<title id="riverTitle">Карта течений философии</title><desc>Круги — философы. Нажмите на имя, чтобы открыть карточку. Подписи направлений фильтруют карту. Ленты показывают отношения между направлениями, а не обязательное личное знакомство философов.</desc><rect width="${m.width}" height="${m.height}" fill="#f8f7f2"/>`;
  if(m.hasMain)html+='<text x="26" y="91" class="tradition-heading" fill="#43564b">ЕВРОПЕЙСКАЯ ФИЛОСОФИЯ И ЕЁ ПРОДОЛЖЕНИЯ</text>';
- if(m.hasParallel){const y=m.parallelStart;html+=`<rect x="0" y="${y}" width="${m.width}" height="${m.height-y}" fill="#eeeff0"/><path d="M 0 ${y} H ${m.width}" stroke="#b9bdc2" stroke-width="2"/><text x="26" y="${y+36}" class="tradition-heading" fill="#60666e">ДРУГИЕ ТРАДИЦИИ · ПАРАЛЛЕЛИ И ОБМЕН ИДЕЯМИ</text><text x="26" y="${y+63}" class="tradition-caption" fill="#737980">Отдельная область общей карты; линии между областями показывают исторические связи.</text>`;}
- if(!m.focused){for(let i=0;i<10;i++){const x=130+i*250;html+=`<path d="M ${x} 85 V ${m.height-25}" stroke="#dedfd6" stroke-width="1" stroke-dasharray="3 8"/><text x="${x-104}" y="30" class="epoch-label">${esc(mapEpochs[i][0])}</text><text x="${x-104}" y="53" class="epoch-context">${esc(mapEpochs[i][1].split(',')[0])}</text>`;}}
+ if(m.hasParallel){const y=m.parallelStart;html+=`<rect x="0" y="${y}" width="${m.width}" height="${m.height-y}" fill="#eeeff0"/><path d="M 0 ${y} H ${m.width}" stroke="#b9bdc2" stroke-width="2"/>`;if(!m.focused||m.hasMain)html+=`<text x="26" y="${y+36}" class="tradition-heading" fill="#60666e">ДРУГИЕ ТРАДИЦИИ · ПАРАЛЛЕЛИ И ОБМЕН ИДЕЯМИ</text>`;if(!m.focused)html+=`<text x="26" y="${y+63}" class="tradition-caption" fill="#737980">Отдельная область общей карты; линии между областями показывают исторические связи.</text>`;}
+ if(!m.focused){for(const [i,b] of m.bands.entries())html+=`<rect x="0" y="${b.top}" width="${m.width}" height="${Math.min(b.height,m.height-b.top)}" fill="${i%2?'#e8eaec':'#f0f1f2'}"/><path d="M 0 ${b.top} H ${m.width}" stroke="#b9bdc2"/><text x="26" y="${b.top+33}" class="tradition-heading" fill="#535b64">${esc(b.title)}</text><text x="26" y="${b.top+59}" class="tradition-caption" fill="#737980">${esc(b.context)}</text>`;
+ for(let i=0;i<10;i++){const x=130+i*250;html+=`<path d="M ${x} 85 V ${m.height-25}" stroke="#dedfd6" stroke-width="1" stroke-dasharray="3 8"/><text x="${x-104}" y="30" class="epoch-label">${esc(mapEpochs[i][0])}</text><text x="${x-104}" y="53" class="epoch-context">${esc(mapEpochs[i][1].split(',')[0])}</text>`;}}
  else if(m.ids.length>1)html+=`<text x="90" y="42" class="epoch-label">ИСТОЧНИКИ И СПОРЫ →</text><text x="550" y="42" class="epoch-label">ВЫБРАННОЕ ТЕЧЕНИЕ</text><text x="1010" y="42" class="epoch-label">ПРОДОЛЖЕНИЯ →</text>`;
  for(const e of m.links){const i=edges.indexOf(e),width=(byId(e.from).weight+byId(e.to).weight-2)*4.6*(isParallel(e.from)||isParallel(e.to)?.65:1),color=edgeColor(e),d=curveFor(e,m);html+=`<g class="river-edge ${e.type==='спор'?'is-dispute':''}" data-edge="${i}" tabindex="0" role="button" aria-label="${esc(byId(e.from).name+' → '+byId(e.to).name+': '+e.type)}"><title>${esc(byId(e.from).name+' → '+byId(e.to).name+' · '+e.type+'\n'+e.note)}</title><path class="edge-hit" d="${d}" fill="none" stroke="transparent" stroke-width="${Math.max(25,width+8)}"/><path class="ribbon" d="${d}" fill="none" stroke="${color}" stroke-width="${width}" stroke-linecap="round"/><path class="ribbon-spine" d="${d}" fill="none" stroke="${color}" stroke-width="1.5" ${e.type==='спор'?'stroke-dasharray="5 5"':''}/></g>`;}
  for(const id of m.ids){
@@ -65,18 +68,22 @@ function paintMap(){
  $('#mapStatus').textContent=selectedSchool?`${byId(selectedSchool).name} · ${schoolPeople[selectedSchool].length} представителей`:`${mapModel.ids.length} течений · ${new Set(mapModel.ids.flatMap(id=>schoolPeople[id].map(p=>p.id))).size} философов`;
  document.querySelectorAll('[data-family]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.family===selectedFamily)));
  if(selectedSchool)renderInspector();
- requestAnimationFrame(()=>{fitMap();if(mapViewport.clientWidth<760){const center=mapModel.positions[selectedSchool||'heidegger']||{x:mapModel.width/2,y:mapModel.height/2},scale=.58,w=mapViewport.clientWidth/scale,h=mapViewport.clientHeight/scale;camera={x:center.x-w/2,y:center.y-h/2,w,h};applyCamera();}});
+ $('#regionIntro').hidden=Boolean(selectedSchool);
+ requestAnimationFrame(()=>{if(!selectedSchool){focusRegion(currentRegion);return;}fitMap();if(mapViewport.clientWidth<760){const center=mapModel.positions[selectedSchool],scale=.58,w=mapViewport.clientWidth/scale,h=mapViewport.clientHeight/scale;camera={x:center.x-w/2,y:center.y-h/2,w,h};applyCamera();}});
 }
 function renderInspector(){
  const c=byId(selectedSchool),incomingEdges=incoming(c.id),outgoingEdges=outgoing(c.id);
  const related=(list,side)=>list.length?list.map(e=>{const id=e[side];return `<button class="inspector-relation" data-school="${id}"><span>${esc(e.type)} ${side==='from'?'←':'→'}</span>${esc(shortSchools[id])}</button>`;}).join(''):'<p class="small">Связи пока не включены в атлас.</p>';
  $('#schoolInspector').innerHTML=`<button id="closeInspector" class="inspector-close" aria-label="Сбросить выбранное течение">×</button><p class="eyebrow">${esc(c.period)}</p><h2>${esc(c.name)}</h2><p class="inspector-thesis">${esc(c.thesis)}</p>${activeEdge?`<div class="connection-note"><strong>${esc(shortSchools[activeEdge.from])} → ${esc(shortSchools[activeEdge.to])}</strong><p>${esc(activeEdge.type)}. ${esc(activeEdge.note)}</p><a href="${esc(activeEdge.source)}" target="_blank" rel="noopener noreferrer">Источник связи ↗</a></div>`:''}<h3>Главный сдвиг</h3><p>${esc(c.result)}</p><h3>Почему тогда</h3><p>${esc(c.context)}</p><h3>Возражение</h3><p>${esc(c.critique)}</p><button class="primary" data-detail="${c.id}">Идеи, работы и источники →</button><h3>Представители</h3><div class="inspector-people">${schoolPeople[c.id].map(p=>`<button data-person="${p.id}">${esc(p.name)} ↗</button>`).join('')}</div><h3>Откуда пришли идеи</h3>${related(incomingEdges,'from')}<h3>Что выросло дальше</h3>${related(outgoingEdges,'to')}`;
+ const analogies=parallels.filter(p=>p.a===c.id||p.b===c.id);
+ if(analogies.length)$('#schoolInspector').innerHTML+='<h3>Сопоставление, не влияние</h3>'+analogies.map(p=>{const id=p.a===c.id?p.b:p.a;return `<div class="connection-note"><button data-school="${id}">${esc(shortSchools[id])}</button><p>${esc(p.note)}</p></div>`;}).join('');
  $('#closeInspector').onclick=()=>selectSchool('');
 }
 function selectSchool(id,remember=true,edge=null){
  if(id&&!byId(id))return;
  if(remember&&(selectedSchool!==id||selectedFamily))mapTrail.push({school:selectedSchool,family:selectedFamily});
  selectedSchool=id;selectedFamily='';activeEdge=edge;$('#mapSearch').value='';$('#searchResults').hidden=true;
+ if(id)currentRegion=worldPlaces[id]?.[0]||'europe';
  goView('river');paintMap();
 }
 function fitMap(){
@@ -85,6 +92,24 @@ function fitMap(){
  let cw=mapModel.width,ch=mapModel.height;if(cw/ch>aspect)ch=cw/aspect;else cw=ch*aspect;
  camera={x:(mapModel.width-cw)/2,y:(mapModel.height-ch)/2,w:cw,h:ch};applyCamera();
 }
+function focusRegion(id){
+ if(!mapModel)return;
+ currentRegion=id;
+ const band=worldBands.find(b=>b.id===id),ids=mapModel.ids.filter(n=>id==='all'||(id==='europe'?!isParallel(n):worldPlaces[n]?.[0]===id));
+ document.querySelectorAll('[data-region]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.region===id)));
+ const box=$('#regionIntro');box.hidden=false;box.innerHTML=band?`<strong>${esc(band.name)} · ${ids.length} направлений</strong><span>${esc(band.context)} Все области остаются на одной карте.</span>`:'<span>Выберите регион, чтобы приблизить его ветви. Серый цвет обозначает дополнительный фокус атласа, а не меньшую значимость.</span>';
+ if(id==='all'||!ids.length){fitMap();return;}
+ const pts=ids.map(n=>mapModel.positions[n]),x0=Math.min(...pts.map(p=>p.x))-165,x1=Math.max(...pts.map(p=>p.x))+170;
+ const y0=band?band.top:0,y1=Math.max(...pts.map(p=>p.y))+150;
+ const w=mapViewport.clientWidth,h=mapViewport.clientHeight,fitScale=Math.min(w/(x1-x0),h/(y1-y0)),scale=w<760?Math.max(.5,fitScale):fitScale;
+ camera={x:(x0+x1)/2-w/scale/2,y:(y0+y1)/2-h/scale/2,w:w/scale,h:h/scale};
+ if(scale>fitScale){camera.x=x0;camera.y=y0;}
+ if(w<760&&id==='europe'&&mapModel.positions.heidegger){const p=mapModel.positions.heidegger;camera.x=p.x-camera.w/2;camera.y=p.y-camera.h/2;}
+ applyCamera();
+}
+function goRegion(id){
+ currentRegion=id;selectedSchool='';selectedFamily='';activeEdge=null;goView('river');paintMap();
+}
 function applyCamera(){
  if(!camera)return;mapSVG.setAttribute('viewBox',`${camera.x} ${camera.y} ${camera.w} ${camera.h}`);
  const scale=mapViewport.clientWidth/camera.w;mapSVG.classList.toggle('show-all-names',Boolean(selectedSchool)||scale>.85);
@@ -92,7 +117,7 @@ function applyCamera(){
  $('#mapMini').innerHTML=`<svg viewBox="0 0 ${mapModel.width} ${mapModel.height}" aria-hidden="true">${mapModel.hasParallel?`<rect x="0" y="${mapModel.parallelStart}" width="${mapModel.width}" height="${mapModel.height-mapModel.parallelStart}" fill="#e3e5e7"/>`:''}${mapModel.links.map(e=>`<path d="${curveFor(e,mapModel)}" fill="none" stroke="${edgeColor(e)}" stroke-opacity=".35" stroke-width="12"/>`).join('')}${mapModel.ids.map(id=>{const p=mapModel.positions[id];return `<circle cx="${p.x}" cy="${p.y}" r="18" fill="${schoolColor(id)}"/>`;}).join('')}<rect x="${camera.x}" y="${camera.y}" width="${camera.w}" height="${camera.h}" fill="#315d4512" stroke="#315d45" stroke-width="12"/></svg>`;
 }
 function zoomMap(factor,px=.5,py=.5){
- if(!camera)return;const scale=mapViewport.clientWidth/(camera.w/factor);if(scale<.18||scale>2.8)return;
+ if(!camera)return;const scale=mapViewport.clientWidth/(camera.w/factor);if(scale<.035||scale>2.8)return;
  camera.x+=camera.w*px*(1-1/factor);camera.y+=camera.h*py*(1-1/factor);camera.w/=factor;camera.h/=factor;applyCamera();
 }
 function openPerson(p){
@@ -103,13 +128,15 @@ function openPerson(p){
 }
 $('#schoolFilter').innerHTML='<option value="">Все течения</option>'+currents.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
 $('#schoolFilter').onchange=e=>selectSchool(e.target.value);
+$('#regionNavigation').innerHTML=[['europe','Европейская линия'],...worldBands.map(b=>[b.id,b.name]),['all','Вся карта']].map(([id,name])=>`<button data-region="${id}" aria-pressed="${id==='europe'}">${esc(name)}</button>`).join('');
+$('#regionNavigation').onclick=e=>{const b=e.target.closest('[data-region]');if(b)goRegion(b.dataset.region);};
 $('#mapFamilies').innerHTML=Object.entries(mapFamilies).map(([id,f])=>`<button data-family="${id}" aria-pressed="false" style="--family:${f.color}"><i></i>${esc(f.name)}</button>`).join('');
 $('#mapFamilies').onclick=e=>{const b=e.target.closest('[data-family]');if(!b)return;mapTrail.push({school:selectedSchool,family:selectedFamily});selectedSchool='';selectedFamily=selectedFamily===b.dataset.family?'':b.dataset.family;activeEdge=null;paintMap();};
 $('#showNeighbors').onchange=paintMap;
 $('#mapReset').onclick=()=>selectSchool('');
 $('#mapBack').onclick=()=>{const prev=mapTrail.pop();if(!prev)return;selectedSchool=prev.school;selectedFamily=prev.family;activeEdge=null;paintMap();};
-$('#zoomIn').onclick=()=>zoomMap(1.35);$('#zoomOut').onclick=()=>zoomMap(1/1.35);$('#mapFit').onclick=fitMap;
-$('#mapMini').onclick=fitMap;
+$('#zoomIn').onclick=()=>zoomMap(1.35);$('#zoomOut').onclick=()=>zoomMap(1/1.35);$('#mapFit').onclick=()=>selectedSchool?fitMap():focusRegion('all');
+$('#mapMini').onclick=()=>selectedSchool?fitMap():focusRegion('all');
 $('#mapStart').onclick=()=>selectSchool('heidegger');
 $('#mapSearch').addEventListener('input',e=>{const q=normalize(e.target.value.trim()),box=$('#searchResults');if(!q){box.hidden=true;return;}const persons=philosophers.filter(p=>normalize(p.name).includes(q)).slice(0,8),schools=currents.filter(c=>normalize(c.name+' '+c.tags.join(' ')).includes(q)).slice(0,6);box.hidden=false;box.innerHTML=schools.map(c=>`<button data-school="${c.id}"><small>Течение</small>${esc(c.name)}</button>`).join('')+persons.map(p=>`<button data-person="${p.id}"><small>Философ</small>${esc(p.name)}</button>`).join('')||'<p>Ничего не найдено. Попробуйте фамилию или тему.</p>';});
 document.addEventListener('click',e=>{const s=e.target.closest('[data-school]'),p=e.target.closest('[data-person]'),edge=e.target.closest('[data-edge]'),ps=e.target.closest('[data-person-school]');if(s)selectSchool(s.dataset.school);else if(p){$('#searchResults').hidden=true;openPerson(personById(p.dataset.person));}else if(edge){const link=edges[+edge.dataset.edge];selectSchool(link.to,true,link);}else if(ps){closeDetail();selectSchool(ps.dataset.personSchool);}if(!e.target.closest('.river-search'))$('#searchResults').hidden=true;});
@@ -119,16 +146,16 @@ mapSVG.addEventListener('pointerdown',e=>{if(e.button&&e.pointerType!=='touch')r
 mapSVG.addEventListener('pointermove',e=>{
  if(!pointers.has(e.pointerId)||!gesture)return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});const pts=[...pointers.values()],start=gesture.points;
  if(pts.length===1&&start.length===1){const dx=pts[0].x-start[0].x,dy=pts[0].y-start[0].y;if(Math.hypot(dx,dy)>5){dragged=true;mapSVG.setPointerCapture(e.pointerId);camera={...gesture.camera,x:gesture.camera.x-dx*gesture.camera.w/mapViewport.clientWidth,y:gesture.camera.y-dy*gesture.camera.h/mapViewport.clientHeight};applyCamera();}}
- else if(pts.length===2&&start.length===2){dragged=true;const dist=p=>Math.hypot(p[1].x-p[0].x,p[1].y-p[0].y),factor=dist(pts)/Math.max(dist(start),1),newW=gesture.camera.w/factor,newH=gesture.camera.h/factor,scale=mapViewport.clientWidth/newW;if(scale<.18||scale>2.8)return;const r=mapSVG.getBoundingClientRect(),sx=((start[0].x+start[1].x)/2-r.left)/r.width,sy=((start[0].y+start[1].y)/2-r.top)/r.height,px=((pts[0].x+pts[1].x)/2-r.left)/r.width,py=((pts[0].y+pts[1].y)/2-r.top)/r.height;camera={x:gesture.camera.x+sx*gesture.camera.w-px*newW,y:gesture.camera.y+sy*gesture.camera.h-py*newH,w:newW,h:newH};applyCamera();}
+ else if(pts.length===2&&start.length===2){dragged=true;const dist=p=>Math.hypot(p[1].x-p[0].x,p[1].y-p[0].y),factor=dist(pts)/Math.max(dist(start),1),newW=gesture.camera.w/factor,newH=gesture.camera.h/factor,scale=mapViewport.clientWidth/newW;if(scale<.035||scale>2.8)return;const r=mapSVG.getBoundingClientRect(),sx=((start[0].x+start[1].x)/2-r.left)/r.width,sy=((start[0].y+start[1].y)/2-r.top)/r.height,px=((pts[0].x+pts[1].x)/2-r.left)/r.width,py=((pts[0].y+pts[1].y)/2-r.top)/r.height;camera={x:gesture.camera.x+sx*gesture.camera.w-px*newW,y:gesture.camera.y+sy*gesture.camera.h-py*newH,w:newW,h:newH};applyCamera();}
 });
 const endPointer=e=>{pointers.delete(e.pointerId);if(dragged)suppressUntil=Date.now()+350;gesture=pointers.size?{camera:{...camera},points:[...pointers.values()]}:null;};
 mapSVG.addEventListener('pointerup',endPointer);mapSVG.addEventListener('pointercancel',endPointer);mapSVG.addEventListener('pointerleave',e=>{if(!mapSVG.hasPointerCapture(e.pointerId))endPointer(e);});
 mapSVG.addEventListener('click',e=>{if(Date.now()<suppressUntil){e.preventDefault();e.stopImmediatePropagation();}},true);
 mapSVG.addEventListener('wheel',e=>{if(!e.ctrlKey&&!e.metaKey)return;e.preventDefault();const r=mapSVG.getBoundingClientRect();zoomMap(Math.exp(-e.deltaY*.003),(e.clientX-r.left)/r.width,(e.clientY-r.top)/r.height);},{passive:false});
-let resizeTimer;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(fitMap,120);});
+let resizeTimer;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>selectedSchool?fitMap():focusRegion(currentRegion),120);});
 // Keep existing catalogue, comparisons and compass as secondary tools.
 const legacyGoView=goView;
-goView=function(view){if(view==='lineage')view='river';legacyGoView(view);document.body.classList.toggle('river-active',view==='river');if(view==='river'&&mapModel)requestAnimationFrame(fitMap);};
+goView=function(view){if(view==='lineage')view='river';legacyGoView(view);document.body.classList.toggle('river-active',view==='river');if(view==='river'&&mapModel)requestAnimationFrame(()=>selectedSchool?fitMap():focusRegion(currentRegion));};
 navigateNode=function(id){selectSchool(id);};
 const legacyOpenDetail=openDetail;
 openDetail=function(c){legacyOpenDetail(c);if(!c)return;const box=$('#detailContent .people');if(box)box.innerHTML=schoolPeople[c.id].map(p=>`<div class="person"><button data-person="${p.id}">${esc(p.name)} ↗</button><p>${esc(p.works.join('; '))}</p></div>`).join('');};
