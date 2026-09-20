@@ -1,6 +1,7 @@
 'use strict';
 let selectedSchool='',selectedFamily='',mapTrail=[],mapModel=null,camera=null,activeEdge=null;
-let currentRegion='europe';
+let currentRegion='europe',showWorld=false;
+const visibleSchool=id=>showWorld||mapPlaces[id][2]!=='parallel';
 const mapSVG=$('#riverSvg'),mapViewport=$('#riverViewport');
 const personById=id=>philosophers.find(p=>p.id===id);
 const isParallel=id=>mapPlaces[id][2]==='parallel';
@@ -11,6 +12,7 @@ function makeMapModel(schoolId='',family='',neighbors=true){
  let ids=currents.map(c=>c.id),links=edges;
  if(schoolId){ids=[schoolId];if(neighbors)ids.push(...incoming(schoolId).map(e=>e.from),...outgoing(schoolId).map(e=>e.to));ids=[...new Set(ids)];}
  else if(family)ids=ids.filter(id=>mapPlaces[id][2]===family);
+ ids=ids.filter(visibleSchool);
  links=edges.filter(e=>ids.includes(e.from)&&ids.includes(e.to)&&(!schoolId||e.from===schoolId||e.to===schoolId));
  const positions={};let width=2550,height=worldBands.at(-1).top+worldBands.at(-1).height;
  if(schoolId){
@@ -72,15 +74,16 @@ function paintMap(){
  requestAnimationFrame(()=>{if(!selectedSchool){focusRegion(currentRegion);return;}fitMap();if(mapViewport.clientWidth<760){const center=mapModel.positions[selectedSchool],scale=.58,w=mapViewport.clientWidth/scale,h=mapViewport.clientHeight/scale;camera={x:center.x-w/2,y:center.y-h/2,w,h};applyCamera();}});
 }
 function renderInspector(){
- const c=byId(selectedSchool),incomingEdges=incoming(c.id),outgoingEdges=outgoing(c.id);
+ const c=byId(selectedSchool),incomingEdges=incoming(c.id).filter(e=>visibleSchool(e.from)),outgoingEdges=outgoing(c.id).filter(e=>visibleSchool(e.to));
  const related=(list,side)=>list.length?list.map(e=>{const id=e[side];return `<button class="inspector-relation" data-school="${id}"><span>${esc(e.type)} ${side==='from'?'←':'→'}</span>${esc(shortSchools[id])}</button>`;}).join(''):'<p class="small">Связи пока не включены в атлас.</p>';
  $('#schoolInspector').innerHTML=`<button id="closeInspector" class="inspector-close" aria-label="Сбросить выбранное течение">×</button><p class="eyebrow">${esc(c.period)}</p><h2>${esc(c.name)}</h2><p class="inspector-thesis">${esc(c.thesis)}</p>${activeEdge?`<div class="connection-note"><strong>${esc(shortSchools[activeEdge.from])} → ${esc(shortSchools[activeEdge.to])}</strong><p>${esc(activeEdge.type)}. ${esc(activeEdge.note)}</p><a href="${esc(activeEdge.source)}" target="_blank" rel="noopener noreferrer">Источник связи ↗</a></div>`:''}<h3>Главный сдвиг</h3><p>${esc(c.result)}</p><h3>Почему тогда</h3><p>${esc(c.context)}</p><h3>Возражение</h3><p>${esc(c.critique)}</p><button class="primary" data-detail="${c.id}">Идеи, работы и источники →</button><h3>Представители</h3><div class="inspector-people">${schoolPeople[c.id].map(p=>`<button data-person="${p.id}">${esc(p.name)} ↗</button>`).join('')}</div><h3>Откуда пришли идеи</h3>${related(incomingEdges,'from')}<h3>Что выросло дальше</h3>${related(outgoingEdges,'to')}`;
- const analogies=parallels.filter(p=>p.a===c.id||p.b===c.id);
+ const analogies=parallels.filter(p=>(p.a===c.id||p.b===c.id)&&visibleSchool(p.a)&&visibleSchool(p.b));
  if(analogies.length)$('#schoolInspector').innerHTML+='<h3>Сопоставление, не влияние</h3>'+analogies.map(p=>{const id=p.a===c.id?p.b:p.a;return `<div class="connection-note"><button data-school="${id}">${esc(shortSchools[id])}</button><p>${esc(p.note)}</p></div>`;}).join('');
  $('#closeInspector').onclick=()=>selectSchool('');
 }
 function selectSchool(id,remember=true,edge=null){
  if(id&&!byId(id))return;
+ if(id&&isParallel(id)&&!showWorld){showWorld=true;syncWorldControls();}
  if(remember&&(selectedSchool!==id||selectedFamily))mapTrail.push({school:selectedSchool,family:selectedFamily});
  selectedSchool=id;selectedFamily='';activeEdge=edge;$('#mapSearch').value='';$('#searchResults').hidden=true;
  if(id)currentRegion=worldPlaces[id]?.[0]||'europe';
@@ -97,7 +100,7 @@ function focusRegion(id){
  currentRegion=id;
  const band=worldBands.find(b=>b.id===id),ids=mapModel.ids.filter(n=>id==='all'||(id==='europe'?!isParallel(n):worldPlaces[n]?.[0]===id));
  document.querySelectorAll('[data-region]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.region===id)));
- const box=$('#regionIntro');box.hidden=false;box.innerHTML=band?`<strong>${esc(band.name)} · ${ids.length} направлений</strong><span>${esc(band.context)} Все области остаются на одной карте.</span>`:'<span>Выберите регион, чтобы приблизить его ветви. Серый цвет обозначает дополнительный фокус атласа, а не меньшую значимость.</span>';
+ const box=$('#regionIntro');box.hidden=!showWorld;box.innerHTML=band?`<strong>${esc(band.name)} · ${ids.length} направлений</strong><span>${esc(band.context)} Все области остаются на одной карте.</span>`:'<span>Выберите регион, чтобы приблизить его ветви. Серый цвет обозначает дополнительный фокус атласа, а не меньшую значимость.</span>';
  if(id==='all'||!ids.length){fitMap();return;}
  const pts=ids.map(n=>mapModel.positions[n]),x0=Math.min(...pts.map(p=>p.x))-165,x1=Math.max(...pts.map(p=>p.x))+170;
  const y0=band?band.top:0,y1=Math.max(...pts.map(p=>p.y))+150;
@@ -108,6 +111,7 @@ function focusRegion(id){
  applyCamera();
 }
 function goRegion(id){
+ if(id!=='europe'&&id!=='all'&&!showWorld){showWorld=true;syncWorldControls();}
  currentRegion=id;selectedSchool='';selectedFamily='';activeEdge=null;goView('river');paintMap();
 }
 function applyCamera(){
@@ -123,7 +127,8 @@ function zoomMap(factor,px=.5,py=.5){
 function openPerson(p){
  if(!p)return;previousFocus=document.activeElement;
  const schools=p.schools.map(byId),sources=[...new Map(schools.flatMap(c=>c.sources).map(s=>[s[1],s])).values()];
- $('#detailContent').innerHTML=`<p class="eyebrow">Философ · ${esc(p.dates||schools[0].period)}</p><h2 id="detailTitle">${esc(p.name)}</h2><p class="detail-thesis">${esc(p.notes?.[0]||schools[0].thesis)}</p>${section('Основные работы',`<ul>${p.works.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>`)}${section('Возражения и ограничения',`<p>${esc(p.notes?.[1]||schools[0].critique)}</p>`)}${section('Историческая почва',schools.map(c=>`<h4>${esc(c.name)}</h4><p>${esc(c.context)}</p>`).join(''))}${section('Место на карте',`<p>Один мыслитель может участвовать в нескольких традициях. Ленты связывают направления, а не доказывают влияние каждого их представителя на каждого.</p><div class="person-schools">${schools.map(c=>`<button data-person-school="${c.id}">${esc(c.name)} →</button>`).join('')}</div>`)}${section('Изучить идеи подробнее',schools.map(c=>`<button class="school-reading" data-detail="${c.id}">${esc(c.name)}: аргументы, результаты и чтение</button>`).join(''))}${section('Обзоры и источники по традиции',`<div class="source-links">${sources.map(([name,url])=>`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(name)} ↗</a>`).join('')}</div><small>Краткий тезис и возражение — учебная интерпретация. Обзоры могут охватывать всё течение, а не только этого автора.</small>`)}`;
+ const paragraphs=items=>items.map(t=>`<p>${esc(t)}</p>`).join('');
+ $('#detailContent').innerHTML=`<p class="eyebrow">Философ · ${esc(p.dates||schools[0].period)}</p><h2 id="detailTitle">${esc(p.name)}</h2>${section('Мировоззрение и ход мысли',paragraphs(p.worldview))}${section('Культурно-исторический контекст',paragraphs(p.historicalContext))}${section('Основные работы',`<ul>${p.works.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>`)}${section('Возражения и ограничения',`<p>${esc(p.notes[1])}</p>`)}${section('Продолжить чтение',schools.map(c=>`<p class="portrait-reading"><strong>${esc(c.name)}.</strong> ${esc(c.reading)}</p>`).join(''))}${section('Место на карте',`<div class="person-schools">${schools.map(c=>`<button data-person-school="${c.id}">${esc(c.name)} →</button>`).join('')}</div>`)}${section('Источники по традиции',`<div class="source-links">${sources.map(([name,url])=>`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(name)} ↗</a>`).join('')}</div>`)}`;
  const panel=$('#detailPanel');if(!panel.open)panel.showModal();panel.scrollTop=0;document.body.classList.add('modal-open');$('#closeDetail').focus();
 }
 $('#schoolFilter').innerHTML='<option value="">Все течения</option>'+currents.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
@@ -134,11 +139,11 @@ $('#mapFamilies').innerHTML=Object.entries(mapFamilies).map(([id,f])=>`<button d
 $('#mapFamilies').onclick=e=>{const b=e.target.closest('[data-family]');if(!b)return;mapTrail.push({school:selectedSchool,family:selectedFamily});selectedSchool='';selectedFamily=selectedFamily===b.dataset.family?'':b.dataset.family;activeEdge=null;paintMap();};
 $('#showNeighbors').onchange=paintMap;
 $('#mapReset').onclick=()=>selectSchool('');
-$('#mapBack').onclick=()=>{const prev=mapTrail.pop();if(!prev)return;selectedSchool=prev.school;selectedFamily=prev.family;activeEdge=null;paintMap();};
+$('#mapBack').onclick=()=>{const prev=mapTrail.pop();if(!prev)return;if(prev.school&&isParallel(prev.school)&&!showWorld){showWorld=true;syncWorldControls();}selectedSchool=prev.school;selectedFamily=prev.family;activeEdge=null;paintMap();};
 $('#zoomIn').onclick=()=>zoomMap(1.35);$('#zoomOut').onclick=()=>zoomMap(1/1.35);$('#mapFit').onclick=()=>selectedSchool?fitMap():focusRegion('all');
 $('#mapMini').onclick=()=>selectedSchool?fitMap():focusRegion('all');
 $('#mapStart').onclick=()=>selectSchool('heidegger');
-$('#mapSearch').addEventListener('input',e=>{const q=normalize(e.target.value.trim()),box=$('#searchResults');if(!q){box.hidden=true;return;}const persons=philosophers.filter(p=>normalize(p.name).includes(q)).slice(0,8),schools=currents.filter(c=>normalize(c.name+' '+c.tags.join(' ')).includes(q)).slice(0,6);box.hidden=false;box.innerHTML=schools.map(c=>`<button data-school="${c.id}"><small>Течение</small>${esc(c.name)}</button>`).join('')+persons.map(p=>`<button data-person="${p.id}"><small>Философ</small>${esc(p.name)}</button>`).join('')||'<p>Ничего не найдено. Попробуйте фамилию или тему.</p>';});
+$('#mapSearch').addEventListener('input',e=>{const q=normalize(e.target.value.trim()),box=$('#searchResults');if(!q){box.hidden=true;return;}const persons=philosophers.filter(p=>p.schools.some(visibleSchool)&&normalize(p.name).includes(q)).slice(0,8),schools=currents.filter(c=>visibleSchool(c.id)&&normalize(c.name+' '+c.tags.join(' ')).includes(q)).slice(0,6);box.hidden=false;box.innerHTML=schools.map(c=>`<button data-school="${c.id}"><small>Течение</small>${esc(c.name)}</button>`).join('')+persons.map(p=>`<button data-person="${p.id}"><small>Философ</small>${esc(p.name)}</button>`).join('')||'<p>Ничего не найдено. Попробуйте фамилию или тему.</p>';});
 document.addEventListener('click',e=>{const s=e.target.closest('[data-school]'),p=e.target.closest('[data-person]'),edge=e.target.closest('[data-edge]'),ps=e.target.closest('[data-person-school]');if(s)selectSchool(s.dataset.school);else if(p){$('#searchResults').hidden=true;openPerson(personById(p.dataset.person));}else if(edge){const link=edges[+edge.dataset.edge];selectSchool(link.to,true,link);}else if(ps){closeDetail();selectSchool(ps.dataset.personSchool);}if(!e.target.closest('.river-search'))$('#searchResults').hidden=true;});
 mapSVG.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){const b=e.target.closest('[role="button"]');if(b){e.preventDefault();b.dispatchEvent(new MouseEvent('click',{bubbles:true}));}}else if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();camera.x+=e.key==='ArrowLeft'?-camera.w*.1:e.key==='ArrowRight'?camera.w*.1:0;camera.y+=e.key==='ArrowUp'?-camera.h*.1:e.key==='ArrowDown'?camera.h*.1:0;applyCamera();}else if(e.key==='+')zoomMap(1.3);else if(e.key==='-')zoomMap(1/1.3);});
 const pointers=new Map();let gesture=null,dragged=false,suppressUntil=0;
@@ -160,3 +165,19 @@ navigateNode=function(id){selectSchool(id);};
 const legacyOpenDetail=openDetail;
 openDetail=function(c){legacyOpenDetail(c);if(!c)return;const box=$('#detailContent .people');if(box)box.innerHTML=schoolPeople[c.id].map(p=>`<div class="person"><button data-person="${p.id}">${esc(p.name)} ↗</button><p>${esc(p.works.join('; '))}</p></div>`).join('');};
 goView('river');paintMap();
+
+function syncWorldControls(){
+ $('#showWorld').checked=showWorld;
+ $('#regionNavigation').hidden=!showWorld;
+ document.querySelectorAll('[data-family="parallel"]').forEach(b=>b.hidden=!showWorld);
+ $('#schoolFilter').innerHTML='<option value="">Все видимые течения</option>'+currents.filter(c=>visibleSchool(c.id)).map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+ $('#schoolFilter').value=selectedSchool;
+}
+function setWorldVisibility(value){
+ showWorld=Boolean(value);mapTrail=[];activeEdge=null;
+ if(!showWorld){currentRegion='europe';if(selectedSchool&&isParallel(selectedSchool))selectedSchool='';if(selectedFamily==='parallel')selectedFamily='';}
+ $('#mapSearch').value='';$('#searchResults').hidden=true;
+ syncWorldControls();paintMap();
+}
+$('#showWorld').onchange=e=>setWorldVisibility(e.target.checked);
+syncWorldControls();
