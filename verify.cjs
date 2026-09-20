@@ -6,7 +6,7 @@ function el(id){if(!elements.has(id))elements.set(id,{id,innerHTML:'',textConten
 for(const m of html.matchAll(/id="([^"]+)"/g))el(m[1]);el('scopeSelect').value='all';
 const document={activeElement:null,body:{classList:{toggle(){},add(){},remove(){}}},addEventListener(){},querySelector(s){if(s==='#detailContent .people')return el('people');if(!s.startsWith('#'))return null;return el(s.slice(1));},querySelectorAll(s){if(s==='.view')return ['river','atlas','lineage','compare','compass'].map(v=>el(v+'View'));return [];}};
 const ctx=vm.createContext({document,window:{addEventListener(){}},console,requestAnimationFrame:f=>f(),setTimeout,clearTimeout,Date});
-for(const f of ['data.js','enrichment.js','world-traditions.js','graph-data.js','portraits.js','app.js','river.js','political-data.js','assessments.js'])vm.runInContext(fs.readFileSync(''+f,'utf8'),ctx,{filename:f});
+for(const f of ['data.js','enrichment.js','world-traditions.js','graph-data.js','portraits.js','app.js','river.js','political-data.js','ideologies.js','political-profile.js','assessments.js'])vm.runInContext(fs.readFileSync(''+f,'utf8'),ctx,{filename:f});
 const run=s=>vm.runInContext(s,ctx);
 assert.equal(run('mapModel.ids.length'),40);assert(run('mapModel.ids.every(visibleSchool)'));
 run("selectSchool('scholastic')");assert(!run("mapModel.ids.includes('islamic')"));
@@ -63,3 +63,27 @@ run("testStates.political.answers=Array(70).fill(2);testStates.political.index=7
 run("startAssessment('philosophy');testStates.philosophy.answers=philosophyQuestions.map(q=>q.options.length);testStates.philosophy.index=10;renderAssessment()");assert(el('assessmentRunner').innerHTML.includes('Пока нет оснований'));
 run("testStates.philosophy.answers=Array(10).fill(0);renderAssessment()");assert(el('assessmentRunner').innerHTML.includes('Мои ответы'));
 console.log('Optional traditions, expanded content, quiz scoring and answer revision: PASS');
+// Matching uses public reference points, never any real person's saved results.
+assert.equal(run('politicalIdeologies.length'),52);
+assert(run('politicalIdeologies.every(i=>Boolean(ideologyTranslations[i.name]))'));
+for(const name of ['Centrist','Libertarian Socialism','Conservatism','Social Democracy']){
+ assert.equal(run(`nearestIdeologies(politicalIdeologies.find(i=>i.name===${JSON.stringify(name)}).stats)[0].ideology.name`),name);
+}
+assert.equal(run('nearestIdeologies({econ:NaN,dipl:50,govt:50,scty:50}).length'),0);
+assert.equal(run('nearestIdeologies({econ:101,dipl:50,govt:50,scty:50}).length'),0);
+assert.deepEqual(JSON.parse(run('JSON.stringify(politicalCoordinates({econ:100,dipl:0,govt:0,scty:100}))')),{economy:-10,authority:10,nation:10,progress:10});
+assert.deepEqual(JSON.parse(run('JSON.stringify(politicalCoordinates({econ:0,dipl:100,govt:100,scty:0}))')),{economy:10,authority:-10,nation:-10,progress:-10});
+assert.equal(run('parsePoliticalScoreInputs({econ:"",dipl:"50",govt:"50",scty:"50"})'),null);
+assert.equal(run('parsePoliticalScoreInputs({econ:"0",dipl:"100",govt:"50,5",scty:"50"}).govt'),50.5);
+assert.equal(run('parsePoliticalScoreInputs({econ:"Infinity",dipl:"50",govt:"50",scty:"50"})'),null);
+for(const ideology of run('politicalIdeologies')){
+ const markup=run(`renderPoliticalProfile(${JSON.stringify(ideology.stats)})`);
+ assert(markup.includes('Ваше положение'));assert(!markup.includes('NaN'));assert(!markup.includes('undefined'));assert(!markup.includes('Infinity'));
+}
+run('renderPoliticalProfile({econ:50,dipl:50,govt:50,scty:50});profileState.all=true');
+assert.equal(run('profileReferences().length'),52);
+run('selectProfileReference(0)');assert(el('profileExplorer').innerHTML.includes('Анархо-коммунизм'));
+assert(run('renderPoliticalProfile({econ:50,dipl:50,govt:50,scty:50},true)').includes('Все ответы нейтральны'));
+run("activeTest='political';testStates.political.answers=Array(70).fill(2);testStates.political.index=70;renderAssessment()");
+assert(el('assessmentRunner').innerHTML.includes('Ближайший профиль'));
+console.log('52 ideology references, original matching, coordinate orientation, input validation and result integration: PASS');
